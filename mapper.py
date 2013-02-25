@@ -160,26 +160,26 @@ def walkDirs(p):
     dirs = getDirs(p)
     for f in files:
         try:
-            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(hashlib.md5(f).hexdigest()), unicode(os.stat(f)), int(time.time())])
+            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(fileMD5(f)), unicode(os.stat(f)), int(time.time())])
         except Exception as e:
             pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n\n'.format(f, pprint.pformat(e)))
+                errFile.write('{}\n{}\n{}\n\n'.format(f, str(e), pprint.pformat(e)))
     for s in links:
         try:
-            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(f), unicode(path.realpath(f)), int(time.time())])
+            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(s), unicode(path.realpath(s)), int(time.time())])
         except Exception as e:
             pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n\n'.format(s, pprint.pformat(e)))
+                errFile.write('{}\n{}\n{}\n\n'.format(s, str(e), pprint.pformat(e)))
     for d in dirs:
         try:
             walkDirs(unicode(d))
         except Exception as e:
             pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n\n'.format(d, pprint.pformat(e)))
-walkDirs(os.getcwd())
+                errFile.write('{}\n{}\n{}\n\n'.format(d, str(e), pprint.pformat(e)))
+walkDirs('/media/dumpy')
 
 cur.execute('UPDATE "main"."meta" SET completed=?', [int(time.time())])
 con.commit()
