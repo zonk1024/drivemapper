@@ -147,12 +147,7 @@ def fileMD5(f):
             md5.update(chunk)
     return md5.hexdigest()
 
-cnt = 0
 def walkDirs(p):
-    global cnt
-    cnt += 1
-    if cnt % 1000 == 0:
-        con.commit()
     print 'INSERT INTO "main"."dirs" (path, seen) VALUES ("{}", {})'.format(p, int(time.time()))
     cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [unicode(p), int(time.time())])
     files = getFiles(p)
@@ -160,14 +155,20 @@ def walkDirs(p):
     dirs = getDirs(p)
     for f in files:
         try:
-            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(fileMD5(f)), unicode(os.stat(f)), int(time.time())])
+            md5 = fileMD5(f)
+            stat = ','.join([str(i) for i in os.stat(f)])
+            print 'INSERT INTO "main"."files" (path, md5, stats, seen) VALUES ("{}", "{}", "{}", {})'.format(f, md5, stat, int(time.time()))
+            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(md5), unicode(stat), int(time.time())])
+            con.commit()
         except Exception as e:
             pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
                 errFile.write('{}\n{}\n{}\n\n'.format(f, str(e), pprint.pformat(e)))
     for s in links:
         try:
-            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(s), unicode(path.realpath(s)), int(time.time())])
+            target_path = path.realpath(s)
+            print 'INSERT INTO "main"."links" (path, target_path, seen) VALUES ("{}", "{}", {})'.format(s, target_path, int(time.time()))
+            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(s), unicode(target_path), int(time.time())])
         except Exception as e:
             pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
