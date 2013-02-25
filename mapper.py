@@ -155,14 +155,30 @@ def walkDirs(p):
         con.commit()
     print 'INSERT INTO "main"."dirs" (path, seen) VALUES ("{}", {})'.format(p, int(time.time()))
     cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [unicode(p), int(time.time())])
+    files = getFiles(p)
+    links = getLinks(p)
     dirs = getDirs(p)
-    for i in dirs:
+    for f in files:
         try:
-            walkDirs(unicode(i))
+            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(hashlib.md5(f).hexdigest()), unicode(os.stat(f)), int(time.time())])
         except Exception as e:
-            print e
+            pprint.pprint(e)
             with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n\n'.format(i, pprint.pformat(e)))
+                errFile.write('{}\n{}\n\n'.format(f, pprint.pformat(e)))
+    for s in links:
+        try:
+            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(f), unicode(path.realpath(f)), int(time.time())])
+        except Exception as e:
+            pprint.pprint(e)
+            with open('mapper.err', 'a') as errFile:
+                errFile.write('{}\n{}\n\n'.format(s, pprint.pformat(e)))
+    for d in dirs:
+        try:
+            walkDirs(unicode(d))
+        except Exception as e:
+            pprint.pprint(e)
+            with open('mapper.err', 'a') as errFile:
+                errFile.write('{}\n{}\n\n'.format(d, pprint.pformat(e)))
 walkDirs(os.getcwd())
 
 cur.execute('UPDATE "main"."meta" SET completed=?', [int(time.time())])
