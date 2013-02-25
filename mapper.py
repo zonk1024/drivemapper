@@ -162,7 +162,7 @@ def walkDirs(p):
         except Exception as e:
             print e
             with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n\n'.format(i, e))
+                errFile.write('{}\n{}\n\n'.format(i, pprint.pformat(e)))
 walkDirs(os.getcwd())
 
 cur.execute('UPDATE "main"."meta" SET completed=?', [int(time.time())])
