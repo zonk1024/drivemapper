@@ -6,7 +6,22 @@ import time
 import pprint
 path = os.path
 
+class Counter(object):
+    def __init__(self):
+        self.value = 0
+    def incr(self):
+        self.value += 1
+        return self.value
+    def current(self):
+        return self.value
+
+cnt = Counter()
 debug = True
+db_file = 'mapper2.sqlite3'
+commit_size = 8192
+err_file = 'mapper.err'
+con = sqlite3.connect(db_file)
+cur = con.cursor()
 
 SQL = (
     ("metaSQL", """CREATE TABLE IF NOT EXISTS "main"."meta" (
@@ -52,15 +67,15 @@ SQL = (
         )"""),
 )
 
-con = sqlite3.connect('mapper.sqlite3')
-cur = con.cursor()
 
-def buildTables():
+
+def build_tables():
     for table in SQL:
         if debug:
             print "Attempting to create table: {}".format(table[0])
         cur.execute(table[1])
-buildTables()
+    con.commit()
+build_tables()
 
 cur.execute('INSERT INTO "main"."meta" (action, run) VALUES ("testing", ?)', [int(time.time())])
 con.commit()
@@ -68,8 +83,10 @@ cur.execute('SELECT * FROM "main"."meta"')
 res = cur.fetchall()
 session = res[-1][0]
 pprint.pprint(res)
+print 'SESSION: {}'.format(session)
+del(res)
 
-def buildUsers():
+def build_users():
     cur.execute("UPDATE users SET dirty=?", [int(time.time())])
     with open('/etc/passwd') as passwd:
         for line in passwd.readlines():
@@ -87,14 +104,9 @@ def buildUsers():
                 if debug:
                     print 'UPDATE "main"."users" SET seen={}, dirty=0'.format(seen)
                 cur.execute('UPDATE "main"."users" SET seen=?, dirty=0', [seen])
-buildUsers()
+build_users()
 
-if debug:
-    cur.execute('SELECT * FROM "main"."users" WHERE dirty=0')
-    pprint.pprint(cur.fetchall())
-
-
-def buildGroups():
+def build_groups():
     cur.execute("UPDATE groups SET dirty=?", [int(time.time())])
     with open('/etc/group') as group:
         for line in group.readlines():
@@ -112,33 +124,79 @@ def buildGroups():
                 if debug:
                     print 'UPDATE "main"."groups" SET seen={}, dirty=0'.format(seen)
                 cur.execute('UPDATE "main"."groups" SET seen=?, dirty=0', [seen])
-buildGroups()
-
-def saveDir(p):
-    cur.execute('SELECT * FROM "main"."dirs" WHERE path=?', [p])
-    if len(cur.fetchall) != 0:
-        cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [p, int(time.time())])
+build_groups()
 
 if debug:
+    cur.execute('SELECT * FROM "main"."users" WHERE dirty=0')
+    pprint.pprint(cur.fetchall())
     cur.execute('SELECT * FROM "main"."groups" WHERE dirty=0')
     pprint.pprint(cur.fetchall())
 
+def commit_em():
+    if debug:
+        print '\n\n\n==============COMMITTING==============\n\n\n'
+    con.commit()
+    
+def log_err(e):
+   if debug:
+       pprint.pprint(e)
+   with open(err_file, 'a') as err_f:
+       err_f.write('{}\n{}\n{}\n\n'.format(d, str(e), pprint.pformat(e)))
 
-def getDirs(p):
+def insert_file(f):
+    if cnt.incr() % commit_size == 0:
+        commit_em()
+    try:
+        f = unicode(f)
+    except Exception as e:
+        log_err(e)
+    if debug:
+        print 'CNT: {}  SIZE: {}'.format(cnt.current(), os.stat(f).st_size)
+    md5 = file_md5(f)
+    stat = ','.join([str(i) for i in os.stat(f)])
+    if debug:
+        print 'INSERT INTO "main"."files" (path, md5, stats, seen) VALUES ("{}", "{}", "{}", {})'.format(f, md5, stat, int(time.time()))
+    cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(md5), unicode(stat), int(time.time())])
+
+def insert_link(s):
+    if cnt.incr() % commit_size == 0:
+        commit_em()
+    try:
+        s = unicode(s)
+    except Exception as e:
+        log_err(e)
+    target_path = path.realpath(s)
+    if debug:
+        print 'INSERT INTO "main"."links" (path, target_path, seen) VALUES ("{}", "{}", {})'.format(s, target_path, int(time.time()))
+    cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(s), unicode(target_path), int(time.time())])
+
+def insert_dir(d):
+    if cnt.incr() % commit_size == 0:
+        commit_em()
+    try:
+        d = unicode(d)
+    except Exception as e:
+        log_err(e)
+    if debug:
+        print 'INSERT INTO "main"."dirs" (path, seen) VALUES ("{}", {})'.format(d, int(time.time()))
+    cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [unicode(d), int(time.time())])
+    walk_dirs(d)
+
+def get_dirs(p):
     if path.isdir(p):
         return ['{}/{}'.format(p, i) for i in os.listdir(p) if path.isdir('{}/{}'.format(p, i)) and not path.islink('{}/{}'.format(p, i))]
     return None
 
-def getFiles(p):
+def get_files(p):
     if path.isdir(p):
         return ['{}/{}'.format(p, i) for i in os.listdir(p) if path.isfile('{}/{}'.format(p, i)) and not path.islink('{}/{}'.format(p, i))]
     return None
 
-def getLinks(p):
+def get_links(p):
     if path.isdir(p):
         return ['{}/{}'.format(p, i) for i in os.listdir(p) if path.islink('{}/{}'.format(p, i))]
 
-def fileMD5(f):
+def file_md5(f):
     if not path.isfile(f) or path.islink(f):
         return None
     md5 = hashlib.md5()
@@ -147,51 +205,20 @@ def fileMD5(f):
             md5.update(chunk)
     return md5.hexdigest()
 
-cnt = 0
-def walkDirs(p):
-    global cnt
-    if cnt % 256 == 0:
-        print '\n\n\n==============COMMITTING==============\n\n\n'
-        con.commit()
-    print 'INSERT INTO "main"."dirs" (path, seen) VALUES ("{}", {})'.format(p, int(time.time()))
-    cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [unicode(p), int(time.time())])
-    files = getFiles(p)
-    links = getLinks(p)
-    dirs = getDirs(p)
+def walk_dirs(p):
+    files = get_files(p)
+    links = get_links(p)
+    dirs = get_dirs(p)
     for f in files:
-        cnt += 1
-        try:
-            print 'cnt: {}  size: {}'.format(cnt, os.stat(f).st_size)
-            md5 = fileMD5(f)
-            stat = ','.join([str(i) for i in os.stat(f)])
-            print 'INSERT INTO "main"."files" (path, md5, stats, seen) VALUES ("{}", "{}", "{}", {})'.format(f, md5, stat, int(time.time()))
-            cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [unicode(f), unicode(md5), unicode(stat), int(time.time())])
-            con.commit()
-        except Exception as e:
-            pprint.pprint(e)
-            with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n{}\n\n'.format(f, str(e), pprint.pformat(e)))
+        insert_file(f)
     for s in links:
-        cnt += 1
-        try:
-            target_path = path.realpath(s)
-            print 'INSERT INTO "main"."links" (path, target_path, seen) VALUES ("{}", "{}", {})'.format(s, target_path, int(time.time()))
-            cur.execute('INSERT INTO "main"."links" (path, target_path, seen) VALUES (?, ?, ?)', [unicode(s), unicode(target_path), int(time.time())])
-        except Exception as e:
-            pprint.pprint(e)
-            with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n{}\n\n'.format(s, str(e), pprint.pformat(e)))
+        insert_link(f)
     for d in dirs:
-        cnt += 1
-        try:
-            walkDirs(unicode(d))
-        except Exception as e:
-            pprint.pprint(e)
-            with open('mapper.err', 'a') as errFile:
-                errFile.write('{}\n{}\n{}\n\n'.format(d, str(e), pprint.pformat(e)))
-walkDirs('/media/dumpy')
+        insert_dir(d)
+        walk_dirs(d)
+walk_dirs('/home/zonk1024')
 
-cur.execute('UPDATE "main"."meta" SET completed=?', [int(time.time())])
+cur.execute('UPDATE "main"."meta" SET completed=? WHERE id=?', [int(time.time()), int(session)])
 con.commit()
 cur.close()
 con.close()
