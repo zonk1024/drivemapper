@@ -18,7 +18,8 @@ class Counter(object):
 
 cnt = Counter()
 debug = False
-file_debug = True
+file_debug = False
+commit_debug = True
 db_file = 'mapper.db'
 commit_size = 8192
 err_file = 'mapper.err'
@@ -124,7 +125,7 @@ if debug:
     pprint.pprint(cur.fetchall())
 
 def commit_em():
-    if debug: print '\n\n\n==============COMMITTING==============\n\n\n'
+    if commit_debug: print '==============COMMIT {} AT {}=============='.format(colored(cnt.current(), 'blue'), colored('{:0.15}'.format(time.time()), 'red'))
     con.commit()
     
 def safe_unicode(e):
@@ -152,10 +153,10 @@ def insert_file(f):
         commit_em()
     f = safe_unicode(f)
     if not f: return
-    if debug or file_debug: print 'count: {:>9s}  md5 file size: {:>30s}  path: {}'.format(colored(cnt.current(), 'blue'), colored(human(os.stat(f).st_size), 'red'), colored(f, 'green'))
-
+    stat = os.stat(f)
+    if debug or file_debug or stat.st_size > 100 * 1024**2: print 'count: {:>9s}  md5 file size: {:>30s}  path: {}'.format(colored(cnt.current(), 'blue'), colored(human(stat.st_size), 'red'), colored(f, 'green'))
     md5 = file_md5(f)
-    stat = ','.join([str(i) for i in os.stat(f)])
+    stat = ','.join([str(i) for i in stat])
     if debug:
         print 'INSERT INTO "main"."files" (path, md5, stats, seen) VALUES ("{}", "{}", "{}", {})'.format(f, md5, stat, int(time.time()))
     cur.execute('INSERT INTO "main"."files" (path, md5, stats, seen) VALUES (?, ?, ?, ?)', [f, unicode(md5), unicode(stat), int(time.time())])
@@ -179,15 +180,18 @@ def insert_dir(d):
     walk_dirs(d)
 
 def get_dirs(p):
-    if path.isdir(p): return ['{}/{}'.format(safe_unicode(p), i) for i in os.listdir(p) if path.isdir('{}/{}'.format(p, i)) and not path.islink('{}/{}'.format(p, i))]
+    p = safe_unicode(p)
+    if path.isdir(p): return ['{}/{}'.format(p, safe_unicode(i)) for i in os.listdir(p) if path.isdir('{}/{}'.format(p, safe_unicode(i))) and not path.islink('{}/{}'.format(p, safe_unicode(i)))]
     return None
 
 def get_files(p):
-    if path.isdir(p): return ['{}/{}'.format(safe_unicode(p), i) for i in os.listdir(p) if path.isfile('{}/{}'.format(p, i)) and not path.islink('{}/{}'.format(p, i))]
+    p = safe_unicode(p)
+    if path.isdir(p): return ['{}/{}'.format(p, safe_unicode(i)) for i in os.listdir(p) if path.isfile('{}/{}'.format(p, safe_unicode(i))) and not path.islink('{}/{}'.format(p, safe_unicode(i)))]
     return None
 
 def get_links(p):
-    if path.isdir(p): return ['{}/{}'.format(safe_unicode(p), i) for i in os.listdir(p) if path.islink('{}/{}'.format(p, i))]
+    p = safe_unicode(p)
+    if path.isdir(p): return ['{}/{}'.format(p, safe_unicode(i)) for i in os.listdir(p) if path.islink('{}/{}'.format(p, safe_unicode(i)))]
 
 def file_md5(f):
     if not path.isfile(f) or path.islink(f): return None
