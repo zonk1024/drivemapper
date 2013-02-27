@@ -17,7 +17,8 @@ class Counter(object):
         return self.value
 
 cnt = Counter()
-debug = True
+debug = False
+file_debug = True
 db_file = 'mapper.db'
 commit_size = 8192
 err_file = 'mapper.err'
@@ -151,7 +152,7 @@ def insert_file(f):
         commit_em()
     f = safe_unicode(f)
     if not f: return
-    if debug: print 'count: {:9d}  md5 file size: {:30s}'.format(cnt.current(), colored(human(os.stat(f).st_size), 'red'))
+    if debug or file_debug: print 'count: {:>9s}  md5 file size: {:>30s}  path: {}'.format(colored(cnt.current(), 'blue'), colored(human(os.stat(f).st_size), 'red'), colored(f, 'green'))
 
     md5 = file_md5(f)
     stat = ','.join([str(i) for i in os.stat(f)])
