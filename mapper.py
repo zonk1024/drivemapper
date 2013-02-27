@@ -147,14 +147,21 @@ def fileMD5(f):
             md5.update(chunk)
     return md5.hexdigest()
 
+cnt = 0
 def walkDirs(p):
+    global cnt
+    if cnt % 256 == 0:
+        print '\n\n\n==============COMMITTING==============\n\n\n'
+        con.commit()
     print 'INSERT INTO "main"."dirs" (path, seen) VALUES ("{}", {})'.format(p, int(time.time()))
     cur.execute('INSERT INTO "main"."dirs" (path, seen) VALUES (?, ?)', [unicode(p), int(time.time())])
     files = getFiles(p)
     links = getLinks(p)
     dirs = getDirs(p)
     for f in files:
+        cnt += 1
         try:
+            print 'cnt: {}  size: {}'.format(cnt, os.stat(f).st_size)
             md5 = fileMD5(f)
             stat = ','.join([str(i) for i in os.stat(f)])
             print 'INSERT INTO "main"."files" (path, md5, stats, seen) VALUES ("{}", "{}", "{}", {})'.format(f, md5, stat, int(time.time()))
@@ -165,6 +172,7 @@ def walkDirs(p):
             with open('mapper.err', 'a') as errFile:
                 errFile.write('{}\n{}\n{}\n\n'.format(f, str(e), pprint.pformat(e)))
     for s in links:
+        cnt += 1
         try:
             target_path = path.realpath(s)
             print 'INSERT INTO "main"."links" (path, target_path, seen) VALUES ("{}", "{}", {})'.format(s, target_path, int(time.time()))
@@ -174,6 +182,7 @@ def walkDirs(p):
             with open('mapper.err', 'a') as errFile:
                 errFile.write('{}\n{}\n{}\n\n'.format(s, str(e), pprint.pformat(e)))
     for d in dirs:
+        cnt += 1
         try:
             walkDirs(unicode(d))
         except Exception as e:
